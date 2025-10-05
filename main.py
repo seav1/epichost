@@ -165,11 +165,14 @@ def add_server_time(server_url="https://panel.epichost.pl/server/f7f7d38a"):
                     page.screenshot(path="extend_button_not_found.png")
                     return False
 
-                # ⚡ 修正点：检查 class 属性是否包含 disabled
-                button_class = button.get_attribute("class") or ""
-                print(f"按钮 class 属性: {button_class}")
+                # ✅ 检查按钮是否禁用
+                is_disabled = button.get_attribute("disabled")
+                is_aria_disabled = button.get_attribute("aria-disabled")
+                
+                print(f"按钮 disabled 属性: {is_disabled}")
+                print(f"按钮 aria-disabled 属性: {is_aria_disabled}")
 
-                if "disabled" in button_class:
+                if is_disabled is not None or is_aria_disabled == "true":
                     print("按钮已禁用，无需续期。")
                     return True
 
