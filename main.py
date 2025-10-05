@@ -125,9 +125,27 @@ def add_server_time(server_url="https://panel.epichost.pl/server/f7f7d38a"):
                     page.screenshot(path="login_page_load_fail.png")
                     return False
 
-                page.fill('input[name="email"]', login_email)
-                page.fill('input[name="password"]', login_password)
-                page.click('button[type="submit"]')
+                # 等待登录元素
+                email_selector = 'input[name="email"]'
+                password_selector = 'input[name="password"]'
+                login_button_selector = 'button[type="submit"]'
+
+                print("正在等待登录元素加载...")
+                try:
+                    page.wait_for_selector(email_selector, timeout=30000)
+                    page.wait_for_selector(password_selector, timeout=30000)
+                    page.wait_for_selector(login_button_selector, timeout=30000)
+                except Exception as e:
+                    print(f"等待登录元素失败: {e}")
+                    page.screenshot(path="login_elements_not_found.png")
+                    return False
+
+                print("正在填充邮箱和密码...")
+                page.fill(email_selector, login_email)
+                page.fill(password_selector, login_password)
+
+                print("正在点击登录按钮...")
+                page.click(login_button_selector)
 
                 try:
                     page.wait_for_load_state("domcontentloaded", timeout=60000)
@@ -149,42 +167,54 @@ def add_server_time(server_url="https://panel.epichost.pl/server/f7f7d38a"):
 
             # --- 已经进入服务器页面 ---
             print(f"当前页面URL: {page.url}")
-            time.sleep(3)
+            time.sleep(2)
             page.screenshot(path="step1_page_loaded.png")
 
             # --- 查找并点击 ADD 8 HOUR(S) 按钮 ---
-            add_button_selector = 'button:has-text("ADD 8 HOUR(S)"), a:has-text("ADD 8 HOUR(S)"), [role="button"]:has-text("ADD 8 HOUR(S)")'
+            add_button_selector = 'button:has-text("ADD 8 HOUR(S)")'
             print("正在查找 'ADD 8 HOUR(S)' 按钮...")
 
             try:
-                page.wait_for_selector(add_button_selector, timeout=30000)
+                page.wait_for_selector(add_button_selector, state='visible', timeout=30000)
                 button = page.query_selector(add_button_selector)
-
+                
                 if not button:
                     print("按钮查询失败。")
                     page.screenshot(path="extend_button_not_found.png")
                     return False
-
-                # ✅ 检查按钮是否禁用
-                is_disabled = button.get_attribute("disabled")
-                is_aria_disabled = button.get_attribute("aria-disabled")
                 
-                print(f"按钮 disabled 属性: {is_disabled}")
-                print(f"按钮 aria-disabled 属性: {is_aria_disabled}")
-
-                if is_disabled is not None or is_aria_disabled == "true":
-                    print("按钮已禁用，无需续期。")
+                # 检查按钮是否禁用
+                is_disabled = button.is_disabled()
+                print(f"按钮禁用状态: {is_disabled}")
+                
+                if is_disabled:
+                    print("按钮已禁用，服务器无需续期。")
                     return True
-
+                
                 print("按钮可点击，正在点击...")
                 button.click()
-                print("成功点击 'ADD 8 HOUR(S)' 按钮，已续期。")
+                print("成功点击 'ADD 8 HOUR(S)' 按钮。")
                 time.sleep(5)
+                print("任务完成。")
                 return True
-
             except Exception as e:
-                print(f"操作过程中发生错误: {e}")
-                page.screenshot(path="extend_button_error.png")
+                print(f"未找到 'ADD 8 HOUR(S)' 按钮或点击失败: {e}")
+                page.screenshot(path="extend_button_not_found.png")
+                
+                # 打印页面上所有按钮文本，帮助调试
+                try:
+                    buttons = page.query_selector_all('button')
+                    print(f"页面上找到 {len(buttons)} 个按钮:")
+                    for i, btn in enumerate(buttons[:10]):
+                        try:
+                            text = btn.inner_text().strip()
+                            if text:
+                                print(f"  按钮 {i+1}: {text}")
+                        except:
+                            pass
+                except:
+                    pass
+                
                 return False
 
         except Exception as e:
