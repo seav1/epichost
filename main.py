@@ -59,7 +59,7 @@ def parse_cookies_from_env(cookie_string):
             cookies.append({
                 'name': name.strip(),
                 'value': value.strip(),
-                'domain': '.intracex.de',
+                'domain': '.epichost.pl',
                 'path': '/',
                 'expires': time.time() + 3600 * 24 * 365,
                 'httpOnly': True,
@@ -68,9 +68,9 @@ def parse_cookies_from_env(cookie_string):
             })
     return cookies
 
-def add_server_time(server_url="https://intracex.de/minecraft"):
+def add_server_time(server_url="https://panel.epichost.pl/server/f7f7d38a"):
     """
-    尝试登录 intracex.de 并点击 "Verlängern" 按钮。
+    尝试登录 epichost.pl 并点击 "ADD 8 HOUR(S)" 按钮。
     优先使用 REMEMBER_WEB_COOKIE，会话失败则回退邮箱密码登录。
     """
     remember_web_cookie = os.environ.get('REMEMBER_WEB_COOKIE')
@@ -119,7 +119,7 @@ def add_server_time(server_url="https://intracex.de/minecraft"):
                     print("错误: REMEMBER_WEB_COOKIE 无效，且未提供邮箱密码。")
                     return False
 
-                login_url = "https://intracex.de/auth/login"
+                login_url = "https://epichost.pl/auth/login"
                 if not safe_goto(page, login_url):
                     print("访问登录页失败。")
                     page.screenshot(path="login_page_load_fail.png")
@@ -152,9 +152,9 @@ def add_server_time(server_url="https://intracex.de/minecraft"):
             time.sleep(3)
             page.screenshot(path="step1_page_loaded.png")
 
-            # --- 查找并点击 Verlängern 按钮 ---
-            add_button_selector = 'button:has-text("Verlängern"), a:has-text("Verlängern"), [role="button"]:has-text("Verlängern")'
-            print("正在查找 'Verlängern' 按钮...")
+            # --- 查找并点击 ADD 8 HOUR(S) 按钮 ---
+            add_button_selector = 'button:has-text("ADD 8 HOUR(S)"), a:has-text("ADD 8 HOUR(S)"), [role="button"]:has-text("ADD 8 HOUR(S)")'
+            print("正在查找 'ADD 8 HOUR(S)' 按钮...")
 
             try:
                 page.wait_for_selector(add_button_selector, timeout=30000)
@@ -175,7 +175,7 @@ def add_server_time(server_url="https://intracex.de/minecraft"):
 
                 print("按钮可点击，正在点击...")
                 button.click()
-                print("成功点击 'Verlängern' 按钮，已续期。")
+                print("成功点击 'ADD 8 HOUR(S)' 按钮，已续期。")
                 time.sleep(5)
                 return True
 
