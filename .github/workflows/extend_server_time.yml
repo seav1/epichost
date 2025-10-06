@@ -2,9 +2,10 @@ name: Extend Server Time
 
 on:
   schedule:
-    # 每5天运行一次 (每天的0点，每隔5天)
-    - cron: '0 0 */5 * *'
-  workflow_dispatch: # 允许手动触发
+    # 每6小时运行一次
+    # 你可以根据需要调整这个时间
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # 允许手动触发 workflow
 
 jobs:
   run-script:
