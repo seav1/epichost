@@ -1,5 +1,6 @@
 import os
 import time
+import requests
 from playwright.sync_api import sync_playwright, Cookie, TimeoutError as PlaywrightTimeoutError
 
 def handle_consent_popup(page, timeout=10000):
@@ -67,6 +68,35 @@ def parse_cookies_from_env(cookie_string):
                 'sameSite': 'Lax'
             })
     return cookies
+
+def get_cookies_as_string(context):
+    """
+    从浏览器上下文中获取 cookies 并格式化为字符串
+    """
+    cookies = context.cookies()
+    cookie_pairs = []
+    for cookie in cookies:
+        if cookie.get('domain', '').endswith('epichost.pl'):
+            cookie_pairs.append(f"{cookie['name']}={cookie['value']}")
+    return '; '.join(cookie_pairs)
+
+def save_cookies_to_file(context, filename="updated_cookies.txt"):
+    """
+    将 cookies 保存到文件，用于后续 workflow 步骤处理
+    """
+    try:
+        cookie_string = get_cookies_as_string(context)
+        if cookie_string:
+            with open(filename, 'w') as f:
+                f.write(cookie_string)
+            print(f"已将 cookies 保存到文件: {filename}")
+            return True
+        else:
+            print("没有找到有效的 cookies")
+            return False
+    except Exception as e:
+        print(f"保存 cookies 到文件时出错: {e}")
+        return False
 
 def add_server_time(server_url="https://panel.epichost.pl/server/f7f7d38a"):
     """
@@ -156,6 +186,8 @@ def add_server_time(server_url="https://panel.epichost.pl/server/f7f7d38a"):
                         return False
                     else:
                         print("邮箱密码登录成功。")
+                        # 保存新的 cookies 用于更新 GitHub secrets
+                        save_cookies_to_file(context)
                         if page.url != server_url:
                             if not safe_goto(page, server_url):
                                 print("导航到服务器页面失败。")
