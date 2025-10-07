@@ -1,6 +1,8 @@
 import os
 import time
+import base64
 import requests
+from nacl import encoding, public
 from playwright.sync_api import sync_playwright, Cookie, TimeoutError as PlaywrightTimeoutError
 
 def handle_consent_popup(page, timeout=10000):
@@ -69,34 +71,107 @@ def parse_cookies_from_env(cookie_string):
             })
     return cookies
 
-def get_cookies_as_string(context):
+def format_cookies_for_secret(context):
     """
-    从浏览器上下文中获取 cookies 并格式化为字符串
-    """
-    cookies = context.cookies()
-    cookie_pairs = []
-    for cookie in cookies:
-        if cookie.get('domain', '').endswith('epichost.pl'):
-            cookie_pairs.append(f"{cookie['name']}={cookie['value']}")
-    return '; '.join(cookie_pairs)
-
-def save_cookies_to_file(context, filename="updated_cookies.txt"):
-    """
-    将 cookies 保存到文件，用于后续 workflow 步骤处理
+    从浏览器上下文中提取 epichost.pl 相关 cookies 并格式化为字符串
     """
     try:
-        cookie_string = get_cookies_as_string(context)
-        if cookie_string:
-            with open(filename, 'w') as f:
-                f.write(cookie_string)
-            print(f"已将 cookies 保存到文件: {filename}")
-            return True
-        else:
-            print("没有找到有效的 cookies")
-            return False
+        cookies = context.cookies()
     except Exception as e:
-        print(f"保存 cookies 到文件时出错: {e}")
+        print(f"获取 cookies 失败: {e}")
+        return None
+
+    cookie_pairs = []
+    for cookie in cookies:
+        domain = cookie.get('domain', '')
+        if 'epichost.pl' not in domain:
+            continue
+        name = cookie.get('name')
+        value = cookie.get('value')
+        if not name or value is None:
+            continue
+        cookie_pairs.append(f"{name}={value}")
+
+    if not cookie_pairs:
+        return None
+
+    return '; '.join(sorted(cookie_pairs))
+
+def encrypt_secret(public_key: str, secret_value: str) -> str:
+    key = public.PublicKey(public_key.encode('utf-8'), encoding.Base64Encoder())
+    sealed_box = public.SealedBox(key)
+    encrypted = sealed_box.encrypt(secret_value.encode('utf-8'))
+    return base64.b64encode(encrypted).decode('utf-8')
+
+def update_github_secret(secret_name: str, secret_value: str) -> bool:
+    gh_pat = os.environ.get('GH_PAT')
+    repo_slug = os.environ.get('GITHUB_REPOSITORY')
+
+    if not gh_pat:
+        print("未提供 GH_PAT，跳过更新 GitHub secret。")
         return False
+
+    if not repo_slug or '/' not in repo_slug:
+        print("GITHUB_REPOSITORY 环境变量缺失或格式错误，跳过更新 GitHub secret。")
+        return False
+
+    owner, repo = repo_slug.split('/', 1)
+    session = requests.Session()
+    session.headers.update({
+        'Authorization': f'token {gh_pat}',
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'epichost-cookie-updater'
+    })
+
+    key_url = f'https://api.github.com/repos/{owner}/{repo}/actions/secrets/public-key'
+    try:
+        key_resp = session.get(key_url, timeout=15)
+    except requests.RequestException as exc:
+        print(f"请求 GitHub public key 失败: {exc}")
+        return False
+
+    if key_resp.status_code != 200:
+        print(f"获取 GitHub public key 失败，状态码 {key_resp.status_code}: {key_resp.text}")
+        return False
+
+    key_data = key_resp.json()
+    encrypted_value = encrypt_secret(key_data['key'], secret_value)
+
+    put_url = f'https://api.github.com/repos/{owner}/{repo}/actions/secrets/{secret_name}'
+    payload = {
+        'encrypted_value': encrypted_value,
+        'key_id': key_data['key_id']
+    }
+
+    try:
+        put_resp = session.put(put_url, json=payload, timeout=15)
+    except requests.RequestException as exc:
+        print(f"更新 GitHub secret 请求失败: {exc}")
+        return False
+
+    if put_resp.status_code in (201, 204):
+        print(f"GitHub secret '{secret_name}' 更新成功。")
+        return True
+
+    print(f"GitHub secret '{secret_name}' 更新失败，状态码 {put_resp.status_code}: {put_resp.text}")
+    return False
+
+def refresh_cookie_secret(context):
+    """
+    尝试使用最新 cookie 更新 REMEMBER_WEB_COOKIE secret
+    """
+    secret_value = format_cookies_for_secret(context)
+    if not secret_value:
+        print("未生成有效的 cookie 字符串，跳过更新 REMEMBER_WEB_COOKIE secret。")
+        return False
+
+    current = os.environ.get('REMEMBER_WEB_COOKIE')
+    if current == secret_value:
+        print("新 cookie 与现有环境变量一致，跳过更新 REMEMBER_WEB_COOKIE secret。")
+        return False
+
+    print("检测到新的 cookie，开始更新 REMEMBER_WEB_COOKIE secret...")
+    return update_github_secret('REMEMBER_WEB_COOKIE', secret_value)
 
 def add_server_time(server_url="https://panel.epichost.pl/server/f7f7d38a"):
     """
@@ -186,8 +261,6 @@ def add_server_time(server_url="https://panel.epichost.pl/server/f7f7d38a"):
                         return False
                     else:
                         print("邮箱密码登录成功。")
-                        # 保存新的 cookies 用于更新 GitHub secrets
-                        save_cookies_to_file(context)
                         if page.url != server_url:
                             if not safe_goto(page, server_url):
                                 print("导航到服务器页面失败。")
@@ -201,6 +274,11 @@ def add_server_time(server_url="https://panel.epichost.pl/server/f7f7d38a"):
             print(f"当前页面URL: {page.url}")
             time.sleep(2)
             page.screenshot(path="step1_page_loaded.png")
+
+            try:
+                refresh_cookie_secret(context)
+            except Exception as e:
+                print(f"刷新 REMEMBER_WEB_COOKIE secret 时发生错误: {e}")
 
             # --- 查找并点击 ADD 8 HOUR(S) 按钮 ---
             add_button_selector = 'button:has-text("ADD 8 HOUR(S)")'
