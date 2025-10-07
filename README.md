@@ -1,1 +1,1 @@
-# freegamehost
+# epichost
