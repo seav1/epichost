@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      secrets: write
 
     steps:
       - name: Check out repository
@@ -23,7 +22,7 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install dependencies
+      - name: Install Playwright
         run: |
           pip install playwright requests PyNaCl
           playwright install chromium
@@ -34,67 +33,7 @@ jobs:
           LOGIN_EMAIL: ${{ secrets.LOGIN_EMAIL }}
           LOGIN_PASSWORD: ${{ secrets.LOGIN_PASSWORD }}
           GH_PAT: ${{ secrets.GH_PAT }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python main.py
-
-      - name: Update REMEMBER_WEB_COOKIE secret
-        if: success() && hashFiles('updated_cookies.txt') != ''
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          python3 -c '
-          import os
-          import requests
-          import base64
-          from nacl import encoding, public
-
-          if os.path.exists("updated_cookies.txt"):
-              with open("updated_cookies.txt", "r") as f:
-                  secret_value = f.read().strip()
-
-              if secret_value:
-                  print("检测到新的 cookies，正在更新 GitHub secret...")
-                  secret_name = "REMEMBER_WEB_COOKIE"
-                  gh_pat = os.environ["GH_PAT"]
-                  repo = os.environ["GITHUB_REPOSITORY"]
-
-                  try:
-                      # 获取 public key
-                      url = f"https://api.github.com/repos/{repo}/actions/secrets/public-key"
-                      headers = {"Authorization": f"token {gh_pat}"}
-                      response = requests.get(url, headers=headers, timeout=30)
-
-                      if response.status_code == 200:
-                          key_data = response.json()
-                          key_id = key_data["key_id"]
-                          public_key_b64 = key_data["key"]
-
-                          # 使用 libsodium 加密 secret
-                          public_key_obj = public.PublicKey(public_key_b64.encode("utf-8"), encoding.Base64Encoder)
-                          sealed_box = public.SealedBox(public_key_obj)
-                          encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
-                          encrypted_value = base64.b64encode(encrypted).decode("utf-8")
-
-                          # 更新 secret
-                          url = f"https://api.github.com/repos/{repo}/actions/secrets/{secret_name}"
-                          data = {
-                              "encrypted_value": encrypted_value,
-                              "key_id": key_id
-                          }
-                          response = requests.put(url, headers=headers, json=data, timeout=30)
-
-                          if response.status_code in [201, 204]:
-                              print("✅ 成功更新 REMEMBER_WEB_COOKIE secret")
-                              os.remove("updated_cookies.txt")
-                          else:
-                              print(f"❌ 更新 secret 失败: {response.status_code}")
-                      else:
-                          print(f"❌ 获取 public key 失败: {response.status_code}")
-                  except Exception as e:
-                      print(f"❌ 更新过程中出错: {e}")
-          '
 
       - name: Upload screenshots
         if: always() # 不管成功还是失败都上传截图
